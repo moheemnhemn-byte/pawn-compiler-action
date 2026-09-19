@@ -89,7 +89,7 @@ jobs:
 
           echo "mxini.inc created successfully."
 
-      # 6 - إصلاح اختلاف أحرف أسماء الـincludes
+      # 6 - إصلاح اختلاف أسماء الـincludes
       - name: Fix include filename case
         shell: bash
         run: |
@@ -114,86 +114,50 @@ jobs:
             fi
           done
 
-      # 7 - تثبيت الأدوات
-      - name: Install build tools
+      # 7 - تثبيت Wine
+      - name: Install Wine
         shell: bash
         run: |
           set -e
+
+          sudo dpkg --add-architecture i386
 
           sudo apt-get update
 
           sudo apt-get install -y \
-            git \
-            cmake \
-            gcc \
-            g++ \
-            make \
-            gcc-multilib \
-            g++-multilib \
+            wine64 \
+            wine32 \
             unzip
 
-      # 8 - تحميل Pawn Compiler الرسمي
-      - name: Download Pawn Compiler
+          wine --version
+
+      # 8 - التأكد من وجود Compiler الأصلي
+      - name: Check original Pawn compiler
         shell: bash
         run: |
           set -e
 
-          git clone \
-            --depth 1 \
-            --branch v3.10.11 \
-            https://github.com/openmultiplayer/compiler.git \
-            pawn-compiler
+          PAWNCC="$PROJECT_DIR/pawno/pawncc.exe"
 
-      # 9 - بناء Pawn Compiler
-      - name: Build Pawn Compiler
-        shell: bash
-        run: |
-          set -e
-
-          cd pawn-compiler
-
-          mkdir -p build
-
-          cd build
-
-          cmake ../source/compiler \
-            -DCMAKE_C_FLAGS="-m32" \
-            -DCMAKE_BUILD_TYPE=Release
-
-          make -j2
-
-          echo "===== COMPILER FILES ====="
-
-          find . \
-            -type f \
-            \( -name "pawncc" -o -name "pawncc.exe" \) \
-            -print
-
-      # 10 - تحديد مكان pawncc
-      - name: Locate pawncc
-        shell: bash
-        run: |
-          set -e
-
-          PAWNCC=$(find "$GITHUB_WORKSPACE/pawn-compiler" \
-            -type f \
-            -name "pawncc" \
-            -perm -111 \
-            -print -quit)
-
-          if [ -z "$PAWNCC" ]; then
-            echo "ERROR: pawncc was not built!"
+          if [ ! -f "$PAWNCC" ]; then
+            echo "ERROR: pawncc.exe was not found!"
+            echo ""
+            echo "Expected:"
+            echo "$PAWNCC"
+            echo ""
+            echo "Searching for pawncc.exe:"
+            find "$PROJECT_DIR" -iname "pawncc.exe" -print
             exit 1
           fi
 
-          chmod +x "$PAWNCC"
-
-          echo "Pawn compiler:"
+          echo "===================================="
+          echo "Original MihanRP Pawn Compiler found"
+          echo "===================================="
           echo "$PAWNCC"
 
           echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
 
-      # 11 - تجميع new.pwn
+      # 9 - تجميع new.pwn باستخدام pawncc.exe الأصلي
       - name: Compile new.pwn
         shell: bash
         run: |
@@ -212,6 +176,9 @@ jobs:
           echo "Compiling NAVARA / MihanRP"
           echo "===================================="
 
+          echo "Compiler:"
+          echo "$PAWNCC"
+
           echo "Input:"
           echo "$INPUT"
 
@@ -221,14 +188,16 @@ jobs:
           echo "Include:"
           echo "$INCLUDE"
 
-          "$PAWNCC" \
-            -d3 \
-            -Z \
-            "-i$INCLUDE" \
-            "-o$OUTPUT" \
-            "$INPUT"
+          cd "$PROJECT_DIR/pawno"
 
-      # 12 - التأكد من إنشاء AMX
+          wine "$PAWNCC" \
+            "$INPUT" \
+            "-o$OUTPUT" \
+            "-i$INCLUDE" \
+            "-d3" \
+            "-Z"
+
+      # 10 - التأكد من إنشاء AMX
       - name: Verify AMX
         shell: bash
         run: |
@@ -246,6 +215,7 @@ jobs:
           echo "===================================="
           echo "SUCCESS!"
           echo "===================================="
+
           echo "new.amx created successfully."
           echo "Size: $SIZE bytes"
 
@@ -254,11 +224,10 @@ jobs:
             exit 1
           fi
 
-            # 13 - رفع new.amx
+      # 11 - رفع new.amx
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
           path: extracted/mihanrp-master/gamemodes/new.amx
           if-no-files-found: error
-              
