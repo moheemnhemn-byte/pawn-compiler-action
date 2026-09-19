@@ -55,6 +55,7 @@ jobs:
 
           echo ""
           echo "===== INCLUDE FILES ====="
+
           find "$PROJECT_DIR" -type f \
             \( -iname "*.inc" -o -iname "*.pwn" \) \
             | sort
@@ -127,7 +128,13 @@ jobs:
           sudo apt-get install -y \
             wine64 \
             wine32 \
+            winbind \
+            cabextract \
             unzip
+
+          export WINEPREFIX="$RUNNER_TEMP/wine"
+
+          wineboot --init || true
 
           wine --version
 
@@ -141,23 +148,29 @@ jobs:
 
           if [ ! -f "$PAWNCC" ]; then
             echo "ERROR: pawncc.exe was not found!"
+
             echo ""
             echo "Expected:"
             echo "$PAWNCC"
+
             echo ""
             echo "Searching for pawncc.exe:"
-            find "$PROJECT_DIR" -iname "pawncc.exe" -print
+            find "$PROJECT_DIR" \
+              -iname "pawncc.exe" \
+              -print
+
             exit 1
           fi
 
           echo "===================================="
           echo "Original MihanRP Pawn Compiler found"
           echo "===================================="
+
           echo "$PAWNCC"
 
           echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
 
-      # 9 - تجميع new.pwn باستخدام pawncc.exe الأصلي
+      # 9 - تجميع new.pwn
       - name: Compile new.pwn
         shell: bash
         run: |
@@ -169,6 +182,11 @@ jobs:
 
           if [ ! -f "$INPUT" ]; then
             echo "ERROR: new.pwn not found!"
+            exit 1
+          fi
+
+          if [ ! -f "$PAWNCC" ]; then
+            echo "ERROR: pawncc.exe not found!"
             exit 1
           fi
 
@@ -188,9 +206,13 @@ jobs:
           echo "Include:"
           echo "$INCLUDE"
 
+          export WINEPREFIX="$RUNNER_TEMP/wine"
+
           cd "$PROJECT_DIR/pawno"
 
-          wine "$PAWNCC" \
+          wineboot --init || true
+
+          wine ./pawncc.exe \
             "$INPUT" \
             "-o$OUTPUT" \
             "-i$INCLUDE" \
@@ -224,7 +246,7 @@ jobs:
             exit 1
           fi
 
-      # 11 - رفع new.amx
+      # 11 - رفع ملف AMX
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
