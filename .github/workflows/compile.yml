@@ -155,6 +155,7 @@ jobs:
 
             echo ""
             echo "Searching for pawncc.exe:"
+
             find "$PROJECT_DIR" \
               -iname "pawncc.exe" \
               -print
@@ -176,16 +177,17 @@ jobs:
         run: |
           set -e
 
-          INPUT="$PROJECT_DIR/gamemodes/new.pwn"
-          OUTPUT="$PROJECT_DIR/gamemodes/new.amx"
-          INCLUDE="$PROJECT_DIR/pawno/include"
+          INPUT="$GITHUB_WORKSPACE/$PROJECT_DIR/gamemodes/new.pwn"
+          OUTPUT="$GITHUB_WORKSPACE/$PROJECT_DIR/gamemodes/new.amx"
+          INCLUDE="$GITHUB_WORKSPACE/$PROJECT_DIR/pawno/include"
+          COMPILER="$GITHUB_WORKSPACE/$PROJECT_DIR/pawno/pawncc.exe"
 
           if [ ! -f "$INPUT" ]; then
             echo "ERROR: new.pwn not found!"
             exit 1
           fi
 
-          if [ ! -f "$PAWNCC" ]; then
+          if [ ! -f "$COMPILER" ]; then
             echo "ERROR: pawncc.exe not found!"
             exit 1
           fi
@@ -195,7 +197,7 @@ jobs:
           echo "===================================="
 
           echo "Compiler:"
-          echo "$PAWNCC"
+          echo "$COMPILER"
 
           echo "Input:"
           echo "$INPUT"
@@ -208,14 +210,28 @@ jobs:
 
           export WINEPREFIX="$RUNNER_TEMP/wine"
 
-          cd "$PROJECT_DIR/pawno"
-
           wineboot --init || true
 
-          wine ./pawncc.exe \
-            "$INPUT" \
-            "-o$OUTPUT" \
-            "-i$INCLUDE" \
+          WIN_INPUT=$(winepath -w "$INPUT")
+          WIN_OUTPUT=$(winepath -w "$OUTPUT")
+          WIN_INCLUDE=$(winepath -w "$INCLUDE")
+          WIN_COMPILER=$(winepath -w "$COMPILER")
+
+          echo "Windows Input:"
+          echo "$WIN_INPUT"
+
+          echo "Windows Output:"
+          echo "$WIN_OUTPUT"
+
+          echo "Windows Include:"
+          echo "$WIN_INCLUDE"
+
+          cd "$PROJECT_DIR/pawno"
+
+          wine "$WIN_COMPILER" \
+            "$WIN_INPUT" \
+            "-o$WIN_OUTPUT" \
+            "-i$WIN_INCLUDE" \
             "-d3" \
             "-Z"
 
