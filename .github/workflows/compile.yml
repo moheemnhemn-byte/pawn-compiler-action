@@ -21,31 +21,31 @@ jobs:
 
           unzip -o mihanrp-master.zip -d extracted
 
-          echo "===== PROJECT ====="
-          find extracted -maxdepth 3 -type f | head -200
+          echo "===== PROJECT FILES ====="
+          find extracted -maxdepth 4 -type f | head -300
 
-      # 3 - تحديد مجلد المشروع تلقائياً
+      # 3 - تحديد مجلد المشروع
       - name: Detect project folder
         shell: bash
         run: |
           set -e
 
-          PROJECT=$(find extracted -type f -name "new.pwn" -print -quit)
+          PROJECT_FILE=$(find extracted -type f -name "new.pwn" -print -quit)
 
-          if [ -z "$PROJECT" ]; then
+          if [ -z "$PROJECT_FILE" ]; then
             echo "ERROR: new.pwn was not found!"
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$(dirname "$PROJECT")")
+          PROJECT_DIR=$(dirname "$(dirname "$PROJECT_FILE")")
+
+          echo "PROJECT_FILE=$PROJECT_FILE"
+          echo "PROJECT_DIR=$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Found:"
-          echo "$PROJECT"
-
-      # 4 - فحص الملفات
-      - name: Check MihanRP files
+      # 4 - فحص المشروع
+      - name: Check project
         shell: bash
         run: |
           set -e
@@ -53,10 +53,13 @@ jobs:
           echo "===== new.pwn ====="
           find "$PROJECT_DIR" -type f -name "new.pwn"
 
+          echo ""
           echo "===== INCLUDE FILES ====="
-          find "$PROJECT_DIR" -type f \( -iname "*.inc" -o -iname "*.pwn" \) | sort
+          find "$PROJECT_DIR" -type f \
+            \( -iname "*.inc" -o -iname "*.pwn" \) \
+            | sort
 
-      # 5 - إصلاح مشكلة mxINI / mxini
+      # 5 - إصلاح mxINI
       - name: Fix mxINI include
         shell: bash
         run: |
@@ -69,21 +72,24 @@ jobs:
             exit 1
           fi
 
-          FILE=$(find "$INCLUDE_DIR" -type f -iname "mxini.inc" -print -quit)
+          FILE=$(find "$INCLUDE_DIR" \
+            -type f \
+            -iname "mxini.inc" \
+            -print -quit)
 
           if [ -z "$FILE" ]; then
             echo "ERROR: mxINI.inc was not found!"
             exit 1
           fi
 
-          echo "Found mxINI:"
+          echo "Found:"
           echo "$FILE"
 
           cp "$FILE" "$INCLUDE_DIR/mxini.inc"
 
           echo "mxini.inc created successfully."
 
-      # 6 - إصلاح أسماء ملفات الـ include التي تختلف بسبب Linux
+      # 6 - إصلاح اختلاف أحرف أسماء الـincludes
       - name: Fix include filename case
         shell: bash
         run: |
@@ -108,11 +114,14 @@ jobs:
             fi
           done
 
-      # 7 - تثبيت أدوات البناء
-      - name: Install compiler dependencies
+      # 7 - تثبيت الأدوات
+      - name: Install build tools
         shell: bash
         run: |
+          set -e
+
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             cmake \
@@ -144,6 +153,7 @@ jobs:
           cd pawn-compiler
 
           mkdir -p build
+
           cd build
 
           cmake ../source/compiler \
@@ -152,10 +162,14 @@ jobs:
 
           make -j2
 
-          echo "===== COMPILER ====="
-          find . -type f -name "pawncc" -o -name "pawncc.exe"
+          echo "===== COMPILER FILES ====="
 
-      # 10 - العثور على pawncc
+          find . \
+            -type f \
+            \( -name "pawncc" -o -name "pawncc.exe" \) \
+            -print
+
+      # 10 - تحديد مكان pawncc
       - name: Locate pawncc
         shell: bash
         run: |
@@ -174,10 +188,10 @@ jobs:
 
           chmod +x "$PAWNCC"
 
-          echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
+          echo "Pawn compiler:"
+          echo "$PAWNCC"
 
-          echo "Compiler:"
-          "$PAWNCC" 2>&1 | head -20 || true
+          echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
 
       # 11 - تجميع new.pwn
       - name: Compile new.pwn
@@ -208,15 +222,13 @@ jobs:
           echo "$INCLUDE"
 
           "$PAWNCC" \
-            -;+ \
-            -(+ \
             -d3 \
             -Z \
             "-i$INCLUDE" \
             "-o$OUTPUT" \
             "$INPUT"
 
-      # 12 - التأكد أن AMX انعمل
+      # 12 - التأكد من إنشاء AMX
       - name: Verify AMX
         shell: bash
         run: |
@@ -233,19 +245,20 @@ jobs:
 
           echo "===================================="
           echo "SUCCESS!"
-          echo "new.amx created."
-          echo "Size: $SIZE bytes"
           echo "===================================="
+          echo "new.amx created successfully."
+          echo "Size: $SIZE bytes"
 
           if [ "$SIZE" -lt 1000 ]; then
             echo "ERROR: AMX file is suspiciously small!"
             exit 1
           fi
 
-      # 13 - رفع ملف AMX حتى تحمله
+            # 13 - رفع new.amx
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
-          path: ${{ env.PROJECT_DIR }}/gamemodes/new.amx
+          path: extracted/mihanrp-master/gamemodes/new.amx
           if-no-files-found: error
+              
