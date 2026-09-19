@@ -8,19 +8,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download MihanRP
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Extract MihanRP
+        run: |
+          unzip -o mihanrp-master.zip
+          echo "Files extracted:"
+          ls -la mihanrp-master/gamemodes
 
       - name: Compile new.pwn
         id: compiler
         uses: knryuu/pawn-compiler-action@v1
         with:
-          input: gamemodes/new.pwn
-          output: gamemodes/new.amx
-          includes: pawno/include
+          input: mihanrp-master/gamemodes/new.pwn
+          output: mihanrp-master/gamemodes/new.amx
+          includes: mihanrp-master/pawno/include
 
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
-          path: gamemodes/new.amx
+          path: mihanrp-master/gamemodes/new.amx
