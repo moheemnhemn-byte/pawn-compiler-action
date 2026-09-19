@@ -14,27 +14,24 @@ jobs:
       - name: Extract MihanRP
         run: |
           unzip -o mihanrp-master.zip
-          echo "Searching for mxINI..."
-          find mihanrp-master -iname "mxini.inc" -o -iname "mxini"
+          find mihanrp-master/pawno/include -iname "mxini.inc" -exec cp {} mihanrp-master/pawno/include/mxini.inc \;
 
-      - name: Fix mxINI filename
+      - name: Download Pawn Compiler
         run: |
-          FILE=$(find mihanrp-master/pawno/include -iname "mxini.inc" | head -n 1)
-          if [ -n "$FILE" ]; then
-            cp "$FILE" mihanrp-master/pawno/include/mxini.inc
-          else
-            echo "mxini.inc not found"
-            exit 1
-          fi
+          wget -q https://github.com/openmultiplayer/compiler/releases/download/v3.10.11/pawn-compiler-linux.tar.gz
+          tar -xzf pawn-compiler-linux.tar.gz
 
-      - name: Compile new.pwn
-        uses: knryuu/pawn-compiler-action@v1
-        with:
-          input: mihanrp-master/gamemodes/new.pwn
-          output: mihanrp-master/gamemodes/new.amx
-          includes: mihanrp-master/pawno/include
+      - name: Compile
+        run: |
+          chmod +x pawncc
+          ./pawncc \
+            "mihanrp-master/gamemodes/new.pwn" \
+            -o"mihanrp-master/gamemodes/new.amx" \
+            -i"mihanrp-master/pawno/include" \
+            -d3 \
+            -Z
 
-      - name: Upload new.amx
+      - name: Upload AMX
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
