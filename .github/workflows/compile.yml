@@ -9,23 +9,33 @@ jobs:
 
     steps:
 
-      # 1 - تحميل المشروع
+      # ==========================================
+      # 1. تحميل المشروع
+      # ==========================================
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2 - فك ملف MihanRP
+      # ==========================================
+      # 2. فك مشروع MihanRP
+      # ==========================================
       - name: Extract MihanRP
         shell: bash
         run: |
           set -e
 
+          echo "===== EXTRACTING PROJECT ====="
+
           unzip -o mihanrp-master.zip -d extracted
 
+          echo ""
           echo "===== PROJECT FILES ====="
-          find extracted -maxdepth 4 -type f | head -300
 
-      # 3 - تحديد مجلد المشروع
-      - name: Detect project folder
+          find extracted -maxdepth 5 -type f | head -300
+
+      # ==========================================
+      # 3. العثور على new.pwn
+      # ==========================================
+      - name: Detect project
         shell: bash
         run: |
           set -e
@@ -33,34 +43,46 @@ jobs:
           PROJECT_FILE=$(find extracted -type f -name "new.pwn" -print -quit)
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: new.pwn was not found!"
+            echo "ERROR: new.pwn was NOT found!"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$(dirname "$PROJECT_FILE")")
 
-          echo "PROJECT_FILE=$PROJECT_FILE"
-          echo "PROJECT_DIR=$PROJECT_DIR"
+          echo "===================================="
+          echo "FOUND PROJECT"
+          echo "===================================="
+          echo "new.pwn:"
+          echo "$PROJECT_FILE"
+          echo ""
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
 
+          echo "PROJECT_FILE=$PROJECT_FILE" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      # 4 - فحص المشروع
+      # ==========================================
+      # 4. فحص ملفات المشروع
+      # ==========================================
       - name: Check project
         shell: bash
         run: |
           set -e
 
-          echo "===== new.pwn ====="
+          echo "===== GAMEMODE ====="
           find "$PROJECT_DIR" -type f -name "new.pwn"
 
           echo ""
           echo "===== INCLUDE FILES ====="
 
-          find "$PROJECT_DIR" -type f \
+          find "$PROJECT_DIR/pawno/include" \
+            -type f \
             \( -iname "*.inc" -o -iname "*.pwn" \) \
             | sort
 
-      # 5 - إصلاح mxINI
+      # ==========================================
+      # 5. إصلاح mxINI
+      # ==========================================
       - name: Fix mxINI include
         shell: bash
         run: |
@@ -69,7 +91,7 @@ jobs:
           INCLUDE_DIR="$PROJECT_DIR/pawno/include"
 
           if [ ! -d "$INCLUDE_DIR" ]; then
-            echo "ERROR: pawno/include not found!"
+            echo "ERROR: pawno/include was NOT found!"
             exit 1
           fi
 
@@ -79,19 +101,22 @@ jobs:
             -print -quit)
 
           if [ -z "$FILE" ]; then
-            echo "ERROR: mxINI.inc was not found!"
+            echo "ERROR: mxINI.inc was NOT found!"
             exit 1
           fi
 
-          echo "Found:"
+          echo "Found include:"
           echo "$FILE"
 
           cp "$FILE" "$INCLUDE_DIR/mxini.inc"
 
+          echo ""
           echo "mxini.inc created successfully."
 
-      # 6 - إصلاح اختلاف أسماء الـincludes
-      - name: Fix include filename case
+      # ==========================================
+      # 6. إصلاح اختلاف أسماء الـincludes
+      # ==========================================
+      - name: Normalize include names
         shell: bash
         run: |
           set -e
@@ -100,146 +125,123 @@ jobs:
 
           echo "Normalizing include filenames..."
 
-          find "$INCLUDE_DIR" -type f -iname "*.inc" | while read -r FILE
+          find "$INCLUDE_DIR" \
+            -type f \
+            -iname "*.inc" \
+            | while read -r FILE
           do
             BASE=$(basename "$FILE")
             LOWER=$(echo "$BASE" | tr '[:upper:]' '[:lower:]')
 
             if [ "$BASE" != "$LOWER" ]; then
+
               TARGET="$INCLUDE_DIR/$LOWER"
 
               if [ ! -f "$TARGET" ]; then
                 cp "$FILE" "$TARGET"
                 echo "Created: $TARGET"
               fi
+
             fi
           done
 
-      # 7 - تثبيت أدوات البناء
-      - name: Install build tools
+      # ==========================================
+      # 7. تحميل Pawn Compiler 3.10.10 Linux
+      # ==========================================
+      - name: Install Pawn Compiler 3.10.10
         shell: bash
         run: |
           set -e
-
-          sudo apt-get update
-
-          sudo apt-get install -y \
-            git \
-            cmake \
-            gcc \
-            g++ \
-            make \
-            unzip
-
-      # 8 - تحميل Pawn Community Compiler
-      - name: Download Pawn Compiler
-        shell: bash
-        run: |
-          set -e
-
-          git clone \
-            --depth 1 \
-            --branch v3.10.11 \
-            https://github.com/pawn-lang/compiler.git \
-            pawn-compiler
-
-      # 9 - بناء Linux pawncc
-      - name: Build Linux Pawn Compiler
-        shell: bash
-        run: |
-          set -e
-
-          cd pawn-compiler
-
-          mkdir -p build
-          cd build
-
-          cmake ../source/compiler \
-            -DCMAKE_BUILD_TYPE=Release
-
-          make -j2
 
           echo "===================================="
-          echo "Compiler build finished"
+          echo "DOWNLOADING PAWN COMPILER 3.10.10"
           echo "===================================="
 
-          find . \
-            -type f \
-            \( -name "pawncc" -o -name "pawncc.exe" \) \
-            -print
+          mkdir -p "$RUNNER_TEMP/pawn"
 
-      # 10 - تحديد pawncc Linux
-      - name: Locate Linux pawncc
-        shell: bash
-        run: |
-          set -e
+          cd "$RUNNER_TEMP/pawn"
 
-          PAWNCC=$(find "$GITHUB_WORKSPACE/pawn-compiler" \
-            -type f \
-            -name "pawncc" \
-            -print -quit)
+          wget -q \
+            "https://github.com/pawn-lang/compiler/releases/download/v3.10.10/pawnc-3.10.10-linux.tar.gz" \
+            -O pawnc.tar.gz
 
-          if [ -z "$PAWNCC" ]; then
-            echo "ERROR: Linux pawncc was not built!"
+          echo "Downloaded successfully."
+
+          tar -xzf pawnc.tar.gz
+
+          echo ""
+          echo "===== COMPILER FILES ====="
+
+          find . -maxdepth 4 -type f | sort
+
+          COMPILER_DIR="$RUNNER_TEMP/pawn/pawnc-3.10.10-linux"
+
+          if [ ! -f "$COMPILER_DIR/bin/pawncc" ]; then
+            echo "ERROR: Linux pawncc was NOT found!"
             exit 1
           fi
 
-          chmod +x "$PAWNCC"
+          chmod +x "$COMPILER_DIR/bin/pawncc"
 
-          echo "===================================="
-          echo "Linux Pawn Compiler found"
-          echo "===================================="
+          echo ""
+          echo "===== PAWNCC VERSION ====="
 
-          echo "$PAWNCC"
+          "$COMPILER_DIR/bin/pawncc"
 
-          "$PAWNCC" --version || true
+          echo ""
+          echo "Pawn compiler is ready."
 
-          echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
+          echo "PAWNCC=$COMPILER_DIR/bin/pawncc" >> "$GITHUB_ENV"
+          echo "PAWN_LIB=$COMPILER_DIR/lib" >> "$GITHUB_ENV"
 
-      # 11 - تجميع new.pwn
+      # ==========================================
+      # 8. تشغيل Linux Pawn Compiler
+      # ==========================================
       - name: Compile new.pwn
         shell: bash
+        env:
+          LD_LIBRARY_PATH: ${{ env.PAWN_LIB }}
         run: |
           set -e
 
-          INPUT="$PROJECT_DIR/gamemodes/new.pwn"
-          OUTPUT="$PROJECT_DIR/gamemodes/new.amx"
-          INCLUDE="$PROJECT_DIR/pawno/include"
-
-          if [ ! -f "$INPUT" ]; then
-            echo "ERROR: new.pwn not found!"
-            exit 1
-          fi
-
-          if [ ! -f "$PAWNCC" ]; then
-            echo "ERROR: pawncc not found!"
-            exit 1
-          fi
-
           echo "===================================="
-          echo "Compiling NAVARA / MihanRP"
+          echo "COMPILING NAVARA"
           echo "===================================="
 
+          cd "$PROJECT_DIR/gamemodes"
+
+          rm -f new.amx
+
+          echo ""
           echo "Compiler:"
           echo "$PAWNCC"
 
-          echo "Input:"
-          echo "$INPUT"
+          echo ""
+          echo "Source:"
+          echo "$PROJECT_DIR/gamemodes/new.pwn"
 
-          echo "Output:"
-          echo "$OUTPUT"
+          echo ""
+          echo "Includes:"
+          echo "$PROJECT_DIR/pawno/include"
 
-          echo "Include:"
-          echo "$INCLUDE"
+          echo ""
+          echo "Starting compilation..."
+          echo ""
 
           "$PAWNCC" \
-            -d3 \
-            -Z \
-            "-i$INCLUDE" \
-            "-o$OUTPUT" \
-            "$INPUT"
+            "$PROJECT_DIR/gamemodes/new.pwn" \
+            "-i$PROJECT_DIR/pawno/include" \
+            "-D$PROJECT_DIR/gamemodes" \
+            "-Z+" \
+            "-d3" \
+            "-O2"
 
-      # 12 - التأكد من إنشاء AMX
+          echo ""
+          echo "Compilation command finished."
+
+      # ==========================================
+      # 9. التأكد أن AMX انصنع
+      # ==========================================
       - name: Verify AMX
         shell: bash
         run: |
@@ -247,29 +249,43 @@ jobs:
 
           AMX="$PROJECT_DIR/gamemodes/new.amx"
 
+          echo "===================================="
+          echo "CHECKING AMX"
+          echo "===================================="
+
           if [ ! -f "$AMX" ]; then
+            echo ""
             echo "ERROR: new.amx was NOT created!"
+            echo ""
+            echo "Files in gamemodes:"
+            ls -lah "$PROJECT_DIR/gamemodes"
             exit 1
           fi
 
           SIZE=$(stat -c%s "$AMX")
 
+          echo ""
           echo "===================================="
           echo "SUCCESS!"
           echo "===================================="
-
+          echo ""
           echo "new.amx created successfully."
           echo "Size: $SIZE bytes"
+          echo ""
 
           if [ "$SIZE" -lt 1000 ]; then
             echo "ERROR: AMX file is suspiciously small!"
             exit 1
           fi
 
-      # 13 - رفع new.amx
+          echo "AMX verification passed."
+
+      # ==========================================
+      # 10. رفع AMX حتى تحمله
+      # ==========================================
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
-          path: extracted/mihanrp-master/gamemodes/new.amx
+          path: ${{ env.PROJECT_DIR }}/gamemodes/new.amx
           if-no-files-found: error
