@@ -115,80 +115,104 @@ jobs:
             fi
           done
 
-      # 7 - تثبيت Wine
-      - name: Install Wine
+      # 7 - تثبيت أدوات البناء
+      - name: Install build tools
         shell: bash
         run: |
           set -e
-
-          sudo dpkg --add-architecture i386
 
           sudo apt-get update
 
           sudo apt-get install -y \
-            wine64 \
-            wine32 \
-            winbind \
-            cabextract \
+            git \
+            cmake \
+            gcc \
+            g++ \
+            make \
             unzip
 
-          export WINEPREFIX="$RUNNER_TEMP/wine"
-
-          wineboot --init || true
-
-          wine --version
-
-      # 8 - التأكد من وجود Compiler الأصلي
-      - name: Check original Pawn compiler
+      # 8 - تحميل Pawn Community Compiler
+      - name: Download Pawn Compiler
         shell: bash
         run: |
           set -e
 
-          PAWNCC="$PROJECT_DIR/pawno/pawncc.exe"
+          git clone \
+            --depth 1 \
+            --branch v3.10.11 \
+            https://github.com/pawn-lang/compiler.git \
+            pawn-compiler
 
-          if [ ! -f "$PAWNCC" ]; then
-            echo "ERROR: pawncc.exe was not found!"
+      # 9 - بناء Linux pawncc
+      - name: Build Linux Pawn Compiler
+        shell: bash
+        run: |
+          set -e
 
-            echo ""
-            echo "Expected:"
-            echo "$PAWNCC"
+          cd pawn-compiler
 
-            echo ""
-            echo "Searching for pawncc.exe:"
+          mkdir -p build
+          cd build
 
-            find "$PROJECT_DIR" \
-              -iname "pawncc.exe" \
-              -print
+          cmake ../source/compiler \
+            -DCMAKE_BUILD_TYPE=Release
 
+          make -j2
+
+          echo "===================================="
+          echo "Compiler build finished"
+          echo "===================================="
+
+          find . \
+            -type f \
+            \( -name "pawncc" -o -name "pawncc.exe" \) \
+            -print
+
+      # 10 - تحديد pawncc Linux
+      - name: Locate Linux pawncc
+        shell: bash
+        run: |
+          set -e
+
+          PAWNCC=$(find "$GITHUB_WORKSPACE/pawn-compiler" \
+            -type f \
+            -name "pawncc" \
+            -print -quit)
+
+          if [ -z "$PAWNCC" ]; then
+            echo "ERROR: Linux pawncc was not built!"
             exit 1
           fi
 
+          chmod +x "$PAWNCC"
+
           echo "===================================="
-          echo "Original MihanRP Pawn Compiler found"
+          echo "Linux Pawn Compiler found"
           echo "===================================="
 
           echo "$PAWNCC"
 
+          "$PAWNCC" --version || true
+
           echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
 
-      # 9 - تجميع new.pwn
+      # 11 - تجميع new.pwn
       - name: Compile new.pwn
         shell: bash
         run: |
           set -e
 
-          INPUT="$GITHUB_WORKSPACE/$PROJECT_DIR/gamemodes/new.pwn"
-          OUTPUT="$GITHUB_WORKSPACE/$PROJECT_DIR/gamemodes/new.amx"
-          INCLUDE="$GITHUB_WORKSPACE/$PROJECT_DIR/pawno/include"
-          COMPILER="$GITHUB_WORKSPACE/$PROJECT_DIR/pawno/pawncc.exe"
+          INPUT="$PROJECT_DIR/gamemodes/new.pwn"
+          OUTPUT="$PROJECT_DIR/gamemodes/new.amx"
+          INCLUDE="$PROJECT_DIR/pawno/include"
 
           if [ ! -f "$INPUT" ]; then
             echo "ERROR: new.pwn not found!"
             exit 1
           fi
 
-          if [ ! -f "$COMPILER" ]; then
-            echo "ERROR: pawncc.exe not found!"
+          if [ ! -f "$PAWNCC" ]; then
+            echo "ERROR: pawncc not found!"
             exit 1
           fi
 
@@ -197,7 +221,7 @@ jobs:
           echo "===================================="
 
           echo "Compiler:"
-          echo "$COMPILER"
+          echo "$PAWNCC"
 
           echo "Input:"
           echo "$INPUT"
@@ -208,34 +232,14 @@ jobs:
           echo "Include:"
           echo "$INCLUDE"
 
-          export WINEPREFIX="$RUNNER_TEMP/wine"
+          "$PAWNCC" \
+            -d3 \
+            -Z \
+            "-i$INCLUDE" \
+            "-o$OUTPUT" \
+            "$INPUT"
 
-          wineboot --init || true
-
-          WIN_INPUT=$(winepath -w "$INPUT")
-          WIN_OUTPUT=$(winepath -w "$OUTPUT")
-          WIN_INCLUDE=$(winepath -w "$INCLUDE")
-          WIN_COMPILER=$(winepath -w "$COMPILER")
-
-          echo "Windows Input:"
-          echo "$WIN_INPUT"
-
-          echo "Windows Output:"
-          echo "$WIN_OUTPUT"
-
-          echo "Windows Include:"
-          echo "$WIN_INCLUDE"
-
-          cd "$PROJECT_DIR/pawno"
-
-          wine "$WIN_COMPILER" \
-            "$WIN_INPUT" \
-            "-o$WIN_OUTPUT" \
-            "-i$WIN_INCLUDE" \
-            "-d3" \
-            "-Z"
-
-      # 10 - التأكد من إنشاء AMX
+      # 12 - التأكد من إنشاء AMX
       - name: Verify AMX
         shell: bash
         run: |
@@ -262,7 +266,7 @@ jobs:
             exit 1
           fi
 
-      # 11 - رفع ملف AMX
+      # 13 - رفع new.amx
       - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
