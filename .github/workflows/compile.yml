@@ -1,4 +1,4 @@
-name: Compile MihanRP
+name: Compile NAVARA MihanRP
 
 on:
   workflow_dispatch:
@@ -8,31 +8,244 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1 - تحميل المشروع
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2 - فك ملف MihanRP
       - name: Extract MihanRP
+        shell: bash
         run: |
-          unzip -o mihanrp-master.zip
-          find mihanrp-master/pawno/include -iname "mxini.inc" -exec cp {} mihanrp-master/pawno/include/mxini.inc \;
+          set -e
 
+          unzip -o mihanrp-master.zip -d extracted
+
+          echo "===== PROJECT ====="
+          find extracted -maxdepth 3 -type f | head -200
+
+      # 3 - تحديد مجلد المشروع تلقائياً
+      - name: Detect project folder
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT=$(find extracted -type f -name "new.pwn" -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: new.pwn was not found!"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$(dirname "$PROJECT")")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Found:"
+          echo "$PROJECT"
+
+      # 4 - فحص الملفات
+      - name: Check MihanRP files
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== new.pwn ====="
+          find "$PROJECT_DIR" -type f -name "new.pwn"
+
+          echo "===== INCLUDE FILES ====="
+          find "$PROJECT_DIR" -type f \( -iname "*.inc" -o -iname "*.pwn" \) | sort
+
+      # 5 - إصلاح مشكلة mxINI / mxini
+      - name: Fix mxINI include
+        shell: bash
+        run: |
+          set -e
+
+          INCLUDE_DIR="$PROJECT_DIR/pawno/include"
+
+          if [ ! -d "$INCLUDE_DIR" ]; then
+            echo "ERROR: pawno/include not found!"
+            exit 1
+          fi
+
+          FILE=$(find "$INCLUDE_DIR" -type f -iname "mxini.inc" -print -quit)
+
+          if [ -z "$FILE" ]; then
+            echo "ERROR: mxINI.inc was not found!"
+            exit 1
+          fi
+
+          echo "Found mxINI:"
+          echo "$FILE"
+
+          cp "$FILE" "$INCLUDE_DIR/mxini.inc"
+
+          echo "mxini.inc created successfully."
+
+      # 6 - إصلاح أسماء ملفات الـ include التي تختلف بسبب Linux
+      - name: Fix include filename case
+        shell: bash
+        run: |
+          set -e
+
+          INCLUDE_DIR="$PROJECT_DIR/pawno/include"
+
+          echo "Normalizing include filenames..."
+
+          find "$INCLUDE_DIR" -type f -iname "*.inc" | while read -r FILE
+          do
+            BASE=$(basename "$FILE")
+            LOWER=$(echo "$BASE" | tr '[:upper:]' '[:lower:]')
+
+            if [ "$BASE" != "$LOWER" ]; then
+              TARGET="$INCLUDE_DIR/$LOWER"
+
+              if [ ! -f "$TARGET" ]; then
+                cp "$FILE" "$TARGET"
+                echo "Created: $TARGET"
+              fi
+            fi
+          done
+
+      # 7 - تثبيت أدوات البناء
+      - name: Install compiler dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            cmake \
+            gcc \
+            g++ \
+            make \
+            gcc-multilib \
+            g++-multilib \
+            unzip
+
+      # 8 - تحميل Pawn Compiler الرسمي
       - name: Download Pawn Compiler
+        shell: bash
         run: |
-          wget -q https://github.com/openmultiplayer/compiler/releases/download/v3.10.11/pawn-compiler-linux.tar.gz
-          tar -xzf pawn-compiler-linux.tar.gz
+          set -e
 
-      - name: Compile
+          git clone \
+            --depth 1 \
+            --branch v3.10.11 \
+            https://github.com/openmultiplayer/compiler.git \
+            pawn-compiler
+
+      # 9 - بناء Pawn Compiler
+      - name: Build Pawn Compiler
+        shell: bash
         run: |
-          chmod +x pawncc
-          ./pawncc \
-            "mihanrp-master/gamemodes/new.pwn" \
-            -o"mihanrp-master/gamemodes/new.amx" \
-            -i"mihanrp-master/pawno/include" \
+          set -e
+
+          cd pawn-compiler
+
+          mkdir -p build
+          cd build
+
+          cmake ../source/compiler \
+            -DCMAKE_C_FLAGS="-m32" \
+            -DCMAKE_BUILD_TYPE=Release
+
+          make -j2
+
+          echo "===== COMPILER ====="
+          find . -type f -name "pawncc" -o -name "pawncc.exe"
+
+      # 10 - العثور على pawncc
+      - name: Locate pawncc
+        shell: bash
+        run: |
+          set -e
+
+          PAWNCC=$(find "$GITHUB_WORKSPACE/pawn-compiler" \
+            -type f \
+            -name "pawncc" \
+            -perm -111 \
+            -print -quit)
+
+          if [ -z "$PAWNCC" ]; then
+            echo "ERROR: pawncc was not built!"
+            exit 1
+          fi
+
+          chmod +x "$PAWNCC"
+
+          echo "PAWNCC=$PAWNCC" >> "$GITHUB_ENV"
+
+          echo "Compiler:"
+          "$PAWNCC" 2>&1 | head -20 || true
+
+      # 11 - تجميع new.pwn
+      - name: Compile new.pwn
+        shell: bash
+        run: |
+          set -e
+
+          INPUT="$PROJECT_DIR/gamemodes/new.pwn"
+          OUTPUT="$PROJECT_DIR/gamemodes/new.amx"
+          INCLUDE="$PROJECT_DIR/pawno/include"
+
+          if [ ! -f "$INPUT" ]; then
+            echo "ERROR: new.pwn not found!"
+            exit 1
+          fi
+
+          echo "===================================="
+          echo "Compiling NAVARA / MihanRP"
+          echo "===================================="
+
+          echo "Input:"
+          echo "$INPUT"
+
+          echo "Output:"
+          echo "$OUTPUT"
+
+          echo "Include:"
+          echo "$INCLUDE"
+
+          "$PAWNCC" \
+            -;+ \
+            -(+ \
             -d3 \
-            -Z
+            -Z \
+            "-i$INCLUDE" \
+            "-o$OUTPUT" \
+            "$INPUT"
 
-      - name: Upload AMX
+      # 12 - التأكد أن AMX انعمل
+      - name: Verify AMX
+        shell: bash
+        run: |
+          set -e
+
+          AMX="$PROJECT_DIR/gamemodes/new.amx"
+
+          if [ ! -f "$AMX" ]; then
+            echo "ERROR: new.amx was NOT created!"
+            exit 1
+          fi
+
+          SIZE=$(stat -c%s "$AMX")
+
+          echo "===================================="
+          echo "SUCCESS!"
+          echo "new.amx created."
+          echo "Size: $SIZE bytes"
+          echo "===================================="
+
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "ERROR: AMX file is suspiciously small!"
+            exit 1
+          fi
+
+      # 13 - رفع ملف AMX حتى تحمله
+      - name: Upload new.amx
         uses: actions/upload-artifact@v4
         with:
           name: NAVARA-new-amx
-          path: mihanrp-master/gamemodes/new.amx
+          path: ${{ env.PROJECT_DIR }}/gamemodes/new.amx
+          if-no-files-found: error
