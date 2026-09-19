@@ -14,11 +14,20 @@ jobs:
       - name: Extract MihanRP
         run: |
           unzip -o mihanrp-master.zip
-          echo "Files extracted:"
-          ls -la mihanrp-master/gamemodes
+          echo "Searching for mxINI..."
+          find mihanrp-master -iname "mxini.inc" -o -iname "mxini"
+
+      - name: Fix mxINI filename
+        run: |
+          FILE=$(find mihanrp-master/pawno/include -iname "mxini.inc" | head -n 1)
+          if [ -n "$FILE" ]; then
+            cp "$FILE" mihanrp-master/pawno/include/mxini.inc
+          else
+            echo "mxini.inc not found"
+            exit 1
+          fi
 
       - name: Compile new.pwn
-        id: compiler
         uses: knryuu/pawn-compiler-action@v1
         with:
           input: mihanrp-master/gamemodes/new.pwn
